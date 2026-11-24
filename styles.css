@@ -1,0 +1,814 @@
+/* Sermon Vault AI - Clean Editorial & Cross-Platform Styles (Windows, macOS, iPadOS/iOS) */
+
+.svai-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+  --svai-body-size: 15px;
+  --svai-h-main: 20px;
+  --svai-h-sub: 17px;
+}
+
+/* Header */
+.svai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.svai-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svai-title-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--interactive-accent);
+}
+
+.svai-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.svai-model-select {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  max-width: 155px;
+}
+
+.svai-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.svai-icon-btn:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Context & Font Size Control Bar */
+.svai-context-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary-alt, var(--background-primary));
+  flex-shrink: 0;
+}
+
+.svai-top-ctrl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.svai-folder-wrap {
+  flex: 1;
+  min-width: 120px;
+}
+
+.svai-folder-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 3px 8px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.svai-check-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.svai-check-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.svai-check-pill:hover {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.svai-check-pill.is-checked {
+  border-color: var(--interactive-accent);
+  background-color: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-primary));
+  color: var(--text-normal);
+}
+
+.svai-check-pill input[type="checkbox"] {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+
+.svai-font-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.svai-font-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 2px;
+  user-select: none;
+}
+
+.svai-step-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.svai-step-btn:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.svai-font-val {
+  min-width: 20px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-normal);
+  user-select: none;
+}
+
+.svai-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.svai-attach-btn {
+  font-size: 11.5px;
+  padding: 3px 9px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px dashed var(--interactive-accent);
+  background-color: transparent;
+  color: var(--interactive-accent);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.svai-attach-btn:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.svai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  max-width: 220px;
+}
+
+.svai-chip-link {
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svai-chip-link:hover {
+  text-decoration: underline;
+}
+
+.svai-chip-remove {
+  cursor: pointer;
+  font-weight: bold;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.svai-chip-remove:hover {
+  color: var(--text-error);
+}
+
+.svai-pinned-selection {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background-color: var(--background-secondary);
+  border-left: 3px solid var(--interactive-accent);
+  font-size: 12px;
+}
+
+.svai-pinned-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.svai-mini-btn {
+  font-size: 11px;
+  padding: 1px 6px;
+  height: 22px;
+}
+
+.svai-pinned-preview {
+  color: var(--text-muted);
+  line-height: 1.4;
+  max-height: 50px;
+  overflow: hidden;
+}
+
+/* Messages Stream */
+.svai-messages {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.svai-empty-state {
+  margin: auto 0;
+  padding: 18px 14px;
+  border-radius: 10px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  line-height: 1.65;
+}
+
+.svai-empty-title {
+  font-size: var(--svai-h-sub, 17px);
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--text-normal);
+}
+
+.svai-empty-desc {
+  font-size: var(--svai-body-size, 15px);
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  white-space: pre-line;
+}
+
+.svai-empty-tips {
+  padding-left: 1.2em;
+  margin: 0;
+  font-size: var(--svai-body-size, 15px);
+  color: var(--text-normal);
+  list-style-type: disc !important;
+}
+
+.svai-empty-tips li {
+  margin-bottom: 6px;
+  list-style-type: disc !important;
+}
+
+.svai-msg {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  line-height: 1.72;
+  word-break: break-word;
+}
+
+.svai-msg-user {
+  background-color: var(--background-secondary);
+  border-left: 4px solid var(--interactive-accent);
+}
+
+.svai-msg-assistant {
+  background-color: var(--background-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.svai-msg-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px dashed var(--background-modifier-border);
+  font-size: 12px;
+}
+
+.svai-msg-author {
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.svai-msg-badges {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.svai-msg-token-badge {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+}
+
+/* Referenced Vault Notes Box */
+.svai-sources-box {
+  margin: 4px 0 12px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.svai-sources-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.svai-sources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.svai-source-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary);
+  cursor: pointer;
+  gap: 8px;
+}
+
+.svai-source-card:hover {
+  border-color: var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+}
+
+.svai-source-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #2563eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-dark .svai-source-name {
+  color: #60a5fa;
+}
+
+.svai-source-folder {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* =====================================================================
+   Logical Editorial Typography, List Markers, Indentation & Link Colors
+   ===================================================================== */
+
+.svai-msg-body {
+  font-size: var(--svai-body-size, 15px) !important;
+  line-height: 1.74 !important;
+  color: var(--text-normal) !important;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* 1. Body text, list items, and quoted scripture verses ALL share the exact same font size */
+.svai-msg-body p,
+.svai-msg-body li,
+.svai-msg-body blockquote,
+.svai-msg-body blockquote p,
+.svai-msg-body .smm-verse-ref,
+.svai-msg-body .smm-ed-verse,
+.svai-msg-body td,
+.svai-msg-body th {
+  font-size: var(--svai-body-size, 15px) !important;
+  line-height: 1.74 !important;
+}
+
+/* 2. Main Section Headings (H1, H2): 1.30x of body font size, clear bottom divider */
+.svai-msg-body h1,
+.svai-msg-body h2 {
+  font-size: var(--svai-h-main, 20px) !important;
+  line-height: 1.38 !important;
+  font-weight: 800 !important;
+  color: #14532d !important;
+  margin: 1.1em 0 0.45em 0 !important;
+  padding-bottom: 0.25em !important;
+  border-bottom: 1px solid var(--background-modifier-border) !important;
+}
+
+.theme-dark .svai-msg-body h1,
+.theme-dark .svai-msg-body h2 {
+  color: #86efac !important;
+}
+
+.svai-msg-body > h1:first-child,
+.svai-msg-body > h2:first-child {
+  margin-top: 0.2em !important;
+}
+
+/* 3. Subheadings (H3, H4, H5, H6 - e.g. 길가 밭, 돌밭, 가시떨기 밭, 좋은 땅):
+      1.15x of body font size (clearly larger than body!), flush left (no excessive indent!) */
+.svai-msg-body h3,
+.svai-msg-body h4,
+.svai-msg-body h5,
+.svai-msg-body h6 {
+  font-size: var(--svai-h-sub, 17px) !important;
+  line-height: 1.42 !important;
+  font-weight: 700 !important;
+  color: #1e3a8a !important;
+  margin: 0.9em 0 0.35em 0 !important;
+  padding-left: 0 !important;
+}
+
+.theme-dark .svai-msg-body h3,
+.theme-dark .svai-msg-body h4,
+.theme-dark .svai-msg-body h5,
+.theme-dark .svai-msg-body h6 {
+  color: #93c5fd !important;
+}
+
+/* 4. Consistent List Markers (• for 1st level, – for 2nd level) & Moderate Indentation */
+.svai-msg-body ul,
+.svai-msg-body ol {
+  margin: 0.35em 0 0.65em 0 !important;
+  padding-left: 0 !important;
+  list-style: none !important;
+}
+
+.svai-msg-body ul > li {
+  position: relative !important;
+  padding-left: 1.15em !important;
+  margin-bottom: 0.38em !important;
+  list-style: none !important;
+}
+
+.svai-msg-body ul > li::before {
+  content: "•" !important;
+  position: absolute !important;
+  left: 0.15em !important;
+  top: 0 !important;
+  font-weight: 700 !important;
+  color: var(--interactive-accent) !important;
+}
+
+.svai-msg-body ul ul {
+  margin: 0.25em 0 0.35em 0 !important;
+  padding-left: 0.2em !important;
+}
+
+.svai-msg-body ul ul > li {
+  padding-left: 1.05em !important;
+  margin-bottom: 0.28em !important;
+}
+
+.svai-msg-body ul ul > li::before {
+  content: "–" !important;
+  left: 0.1em !important;
+  font-weight: 600 !important;
+  color: var(--text-muted) !important;
+}
+
+.svai-msg-body ol {
+  counter-reset: svai-ol-counter;
+}
+
+.svai-msg-body ol > li {
+  position: relative !important;
+  padding-left: 1.45em !important;
+  margin-bottom: 0.4em !important;
+  counter-increment: svai-ol-counter;
+  list-style: none !important;
+}
+
+.svai-msg-body ol > li::before {
+  content: counter(svai-ol-counter) "." !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  font-weight: 700 !important;
+  color: var(--text-normal) !important;
+}
+
+/* Hide any stray .list-bullet span injected by Obsidian so it doesn't double-render */
+.svai-msg-body .list-bullet {
+  display: none !important;
+}
+
+/* 5. Paragraphs & Blockquotes (Quoted Scripture Verses) */
+.svai-msg-body p {
+  margin: 0.45em 0 !important;
+}
+
+.svai-msg-body blockquote {
+  margin: 0.5em 0 !important;
+  padding: 6px 12px !important;
+  border-left: 3px solid var(--interactive-accent) !important;
+  background-color: var(--background-secondary) !important;
+  border-radius: 0 6px 6px 0 !important;
+  color: var(--text-normal) !important;
+}
+
+.svai-msg-body hr {
+  margin: 0.9em 0 !important;
+  border: none !important;
+  border-top: 1px solid var(--background-modifier-border) !important;
+}
+
+/* 6. 100% Uniform Citation Link Color (Always Blue everywhere in the message) */
+.svai-msg-body a,
+.svai-msg-body a.internal-link,
+.svai-msg-body li a.internal-link,
+.svai-msg-body p a.internal-link,
+.svai-msg-body blockquote a.internal-link {
+  color: #2563eb !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+}
+
+.theme-dark .svai-msg-body a,
+.theme-dark .svai-msg-body a.internal-link,
+.theme-dark .svai-msg-body li a.internal-link,
+.theme-dark .svai-msg-body p a.internal-link,
+.theme-dark .svai-msg-body blockquote a.internal-link {
+  color: #60a5fa !important;
+}
+
+.svai-msg-body a.internal-link:hover {
+  opacity: 0.82 !important;
+}
+
+/* Action Buttons */
+.svai-msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.svai-act-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.svai-loading {
+  padding: 12px;
+  border-radius: 8px;
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  animation: svai-pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes svai-pulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+/* Input Area */
+.svai-input-wrap {
+  padding: 9px 10px;
+  border-top: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.svai-textarea {
+  width: 100%;
+  min-height: 62px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--svai-body-size, 15px);
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+.svai-textarea:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.svai-send-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.svai-input-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.svai-send-btn {
+  padding: 5px 16px;
+  height: 32px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Slim, Unobtrusive Bottom Gauge Panel */
+.svai-gauge-panel {
+  padding: 5px 10px 7px 10px;
+  background-color: var(--background-secondary);
+  border-top: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.svai-gauge-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.svai-gauge-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.svai-gauge-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  gap: 4px;
+}
+
+.svai-gauge-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.svai-gauge-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.svai-gauge-meta {
+  color: var(--text-faint, var(--text-muted));
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.svai-gauge-reset-btn {
+  font-size: 9.5px;
+  padding: 0 5px;
+  height: 16px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.svai-gauge-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background-color: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.svai-gauge-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+  opacity: 0.78;
+}
+
+.svai-gauge-fill.is-good {
+  background-color: #10b981;
+}
+
+.svai-gauge-fill.is-warn {
+  background-color: #f59e0b;
+}
+
+.svai-gauge-fill.is-low {
+  background-color: #ef4444;
+}
+
+/* iPad & Mobile Touch Enhancements */
+.is-mobile .svai-act-btn,
+.is-mobile .svai-attach-btn,
+.is-mobile .svai-source-card {
+  min-height: 36px;
+}
+
+.is-mobile .svai-step-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.is-mobile .svai-textarea {
+  font-size: 16px;
+}
