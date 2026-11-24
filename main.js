@@ -331,8 +331,558 @@ const DEFAULT_SETTINGS = {
     '3. 볼트 내 설교문·연구 노트를 인용할 때는 각 설명 문장 끝에 `[[노트제목]]` 형식으로 명시하되, 답변 맨 마지막에 별도의 "### 출처 노트 링크" 목록을 중복해서 다시 나열하지 마십시오.\n' +
     '4. 설교자(예: 이요한P, 홍정현P, 서도석P 등)나 스트롱 원어사전·주석 자료가 함께 주어졌다면 본문과 자연스럽게 어우러지도록 명확히 정리하십시오.',
   saveFolder: '02 성경 연구',
+  nasBaseUrl: 'https://seoulpastor.direct.quickconnect.to:5001',
+  nasUser: 'pastor',
+  nasPass: 'jbcH0691~!',
+  nasRootFolder: '/개인폴더/히 최신자료/9 신학원 원고-완료',
+  nasNewFolder: 'new',
+  nasAutoSyncWeekly: true,
+  nasLastSyncTs: 0,
+  nasSyncedPaths: {},
+  telegramBotToken: '',
+  telegramChatId: '',
   chatHistory: []
 };
+
+/* ============================================================================
+ * PURE-JS DOCUMENT EXTRACTOR (.hwp / .hwpx / .docx -> text) & NAS SYNC HELPERS
+ * Works identically on Windows, MacBook (macOS), and iPad (iPadOS)
+ * ============================================================================ */
+
+async function inflateRawBytesPureJs(compBytes) {
+  if (typeof require === 'function') {
+    try {
+      const zlib = require('zlib');
+      if (zlib && typeof zlib.inflateRawSync === 'function') {
+        const out = zlib.inflateRawSync(compBytes);
+        return new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+      }
+    } catch (e) {}
+  }
+  if (typeof DecompressionStream === 'function') {
+    const ds = new DecompressionStream('deflate-raw');
+    const readerPromise = new Response(ds.readable).arrayBuffer();
+    const writer = ds.writable.getWriter();
+    await writer.write(compBytes);
+    await writer.close();
+    return new Uint8Array(await readerPromise);
+  }
+  throw new Error('이 기기에서 DEFLATE 압축 해제를 지원하지 않습니다.');
+}
+
+function parseZipEntriesPureJs(u8) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let eocdOffset = -1;
+  const minOff = Math.max(0, u8.length - 65558);
+  for (let i = u8.length - 22; i >= minOff; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset < 0) throw new Error('유효한 ZIP(DOCX/HWPX) 파일이 아닙니다.');
+  const totalEntries = dv.getUint16(eocdOffset + 10, true);
+  const cdOffset = dv.getUint32(eocdOffset + 16, true);
+  const dec = new TextDecoder('utf-8');
+  const entries = [];
+  let p = cdOffset;
+  for (let i = 0; i < totalEntries; i++) {
+    if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const compSize = dv.getUint32(p + 20, true);
+    const uncompSize = dv.getUint32(p + 24, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const localHeaderOffset = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
+    entries.push({ name, method, compSize, uncompSize, localHeaderOffset });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
+async function readZipEntryBytesPureJs(u8, entry) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const lh = entry.localHeaderOffset;
+  if (lh + 30 > u8.length || dv.getUint32(lh, true) !== 0x04034b50) {
+    throw new Error(`ZIP 로컬 헤더 손상: ${entry.name}`);
+  }
+  const lfNameLen = dv.getUint16(lh + 26, true);
+  const lfExtraLen = dv.getUint16(lh + 28, true);
+  const dataStart = lh + 30 + lfNameLen + lfExtraLen;
+  const compSlice = u8.subarray(dataStart, dataStart + entry.compSize);
+  if (entry.method === 0) return new Uint8Array(compSlice);
+  if (entry.method === 8) return await inflateRawBytesPureJs(compSlice);
+  throw new Error(`지원하지 않는 압축 방식(${entry.method}): ${entry.name}`);
+}
+
+async function extractDocxTextPureJs(u8) {
+  const entries = parseZipEntriesPureJs(u8);
+  const docEntry = entries.find((e) => e.name === 'word/document.xml');
+  if (!docEntry) return '';
+  const xmlBytes = await readZipEntryBytesPureJs(u8, docEntry);
+  const xmlStr = new TextDecoder('utf-8').decode(xmlBytes);
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlStr, 'application/xml');
+  const paragraphs = [];
+  const pNodes = xmlDoc.getElementsByTagName('*');
+  for (let i = 0; i < pNodes.length; i++) {
+    const el = pNodes[i];
+    if (el.localName === 'p') {
+      const texts = [];
+      const children = el.getElementsByTagName('*');
+      for (let j = 0; j < children.length; j++) {
+        if (children[j].localName === 't' && children[j].textContent) {
+          texts.push(children[j].textContent);
+        }
+      }
+      const line = texts.join('').trim();
+      if (line) paragraphs.push(line);
+    }
+  }
+  return paragraphs.join('\n');
+}
+
+async function extractHwpxTextPureJs(u8) {
+  const entries = parseZipEntriesPureJs(u8);
+  const secEntries = entries
+    .filter((e) => /^Contents\/section\d+\.xml$/i.test(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const parser = new DOMParser();
+  const paragraphs = [];
+  for (const entry of secEntries) {
+    const xmlBytes = await readZipEntryBytesPureJs(u8, entry);
+    const xmlStr = new TextDecoder('utf-8').decode(xmlBytes);
+    const xmlDoc = parser.parseFromString(xmlStr, 'application/xml');
+    const allNodes = xmlDoc.getElementsByTagName('*');
+    for (let i = 0; i < allNodes.length; i++) {
+      const el = allNodes[i];
+      if (el.localName === 'p') {
+        const texts = [];
+        const children = el.getElementsByTagName('*');
+        for (let j = 0; j < children.length; j++) {
+          if (children[j].localName === 't' && children[j].textContent) {
+            texts.push(children[j].textContent);
+          }
+        }
+        const line = texts.join('').trim();
+        if (line) paragraphs.push(line);
+      }
+    }
+  }
+  return paragraphs.join('\n');
+}
+
+function parseHwpSectionRecordsPureJs(buf) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const paragraphs = [];
+  let pos = 0;
+  const extendedControls = new Set([1, 2, 3, 11, 12, 14, 15, 16, 17, 18, 21, 22, 23]);
+  const inlineControls = new Set([4, 5, 6, 7, 8, 9, 19, 20]);
+
+  while (pos + 4 <= buf.length) {
+    const header = dv.getUint32(pos, true);
+    pos += 4;
+    const tagId = header & 0x3ff;
+    let size = (header >>> 20) & 0xfff;
+    if (size === 0xfff) {
+      if (pos + 4 > buf.length) break;
+      size = dv.getUint32(pos, true);
+      pos += 4;
+    }
+    if (pos + size > buf.length) break;
+
+    if (tagId === 67) {
+      // HWPTAG_PARA_TEXT
+      const chars = [];
+      let i = 0;
+      while (i + 1 < size) {
+        const code = dv.getUint16(pos + i, true);
+        if (code === 0) {
+          i += 2;
+        } else if (extendedControls.has(code)) {
+          i += 16;
+        } else if (inlineControls.has(code)) {
+          i += 16;
+        } else if (code === 10 || code === 13) {
+          chars.push('\n');
+          i += 2;
+        } else if (code === 24) {
+          chars.push('-');
+          i += 2;
+        } else if (code === 30 || code === 31) {
+          chars.push(' ');
+          i += 2;
+        } else if (code < 32) {
+          i += 2;
+        } else {
+          chars.push(String.fromCharCode(code));
+          i += 2;
+        }
+      }
+      const line = chars.join('').trim();
+      if (line) paragraphs.push(line);
+    }
+    pos += size;
+  }
+  return paragraphs.join('\n');
+}
+
+async function extractHwpV5TextPureJs(u8) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  // Check OLE2 magic signature D0 CF 11 E0 A1 B1 1A E1
+  if (u8.length < 512 || dv.getUint32(0, true) !== 0xe011cfd0 || dv.getUint32(4, true) !== 0xe11ab1a1) {
+    // Some .hwp files are actually HWPX (ZIP) with .hwp extension
+    if (dv.getUint32(0, true) === 0x04034b50) {
+      return await extractHwpxTextPureJs(u8);
+    }
+    throw new Error('유효한 HWP(OLE2/HWPX) 파일이 아닙니다.');
+  }
+
+  const sectorShift = dv.getUint16(30, true);
+  const miniSectorShift = dv.getUint16(32, true);
+  const sectorSize = 1 << sectorShift;
+  const miniSectorSize = 1 << miniSectorShift;
+  const numFatSectors = dv.getUint32(44, true);
+  const firstDirSector = dv.getUint32(48, true);
+  const miniStreamCutoff = dv.getUint32(56, true);
+  const firstMiniFatSector = dv.getUint32(60, true);
+  const numMiniFatSectors = dv.getUint32(64, true);
+  const firstDifatSector = dv.getUint32(68, true);
+  const numDifatSectors = dv.getUint32(72, true);
+
+  const sectorOffset = (secId) => (secId + 1) * sectorSize;
+
+  const fatSectors = [];
+  for (let i = 0; i < 109 && fatSectors.length < numFatSectors; i++) {
+    const sid = dv.getUint32(76 + i * 4, true);
+    if (sid !== 0xffffffff && sid !== 0xfffffffe) fatSectors.push(sid);
+  }
+  let difatSec = firstDifatSector;
+  for (let d = 0; d < numDifatSectors && difatSec < 0xfffffffe; d++) {
+    const off = sectorOffset(difatSec);
+    const entriesPerSec = (sectorSize >>> 2) - 1;
+    for (let i = 0; i < entriesPerSec && fatSectors.length < numFatSectors; i++) {
+      const sid = dv.getUint32(off + i * 4, true);
+      if (sid !== 0xffffffff && sid !== 0xfffffffe) fatSectors.push(sid);
+    }
+    difatSec = dv.getUint32(off + entriesPerSec * 4, true);
+  }
+
+  const fatEntriesPerSector = sectorSize >>> 2;
+  const fat = new Uint32Array(fatSectors.length * fatEntriesPerSector);
+  for (let i = 0; i < fatSectors.length; i++) {
+    const off = sectorOffset(fatSectors[i]);
+    for (let j = 0; j < fatEntriesPerSector; j++) {
+      if (off + j * 4 + 4 <= u8.length) {
+        fat[i * fatEntriesPerSector + j] = dv.getUint32(off + j * 4, true);
+      }
+    }
+  }
+
+  const readRegularStream = (startSec, streamSize = null) => {
+    const chunks = [];
+    let total = 0;
+    let sec = startSec;
+    const visited = new Set();
+    while (sec < 0xfffffffe && !visited.has(sec)) {
+      visited.add(sec);
+      const off = sectorOffset(sec);
+      if (off >= u8.length) break;
+      const slice = u8.subarray(off, Math.min(u8.length, off + sectorSize));
+      chunks.push(slice);
+      total += slice.length;
+      if (streamSize !== null && total >= streamSize) break;
+      sec = fat[sec] !== undefined ? fat[sec] : 0xfffffffe;
+    }
+    const finalLen = streamSize !== null ? Math.min(total, streamSize) : total;
+    const out = new Uint8Array(finalLen);
+    let pos = 0;
+    for (const c of chunks) {
+      const take = Math.min(c.length, finalLen - pos);
+      if (take <= 0) break;
+      out.set(c.subarray(0, take), pos);
+      pos += take;
+    }
+    return out;
+  };
+
+  const dirStream = readRegularStream(firstDirSector);
+  const dirDv = new DataView(dirStream.buffer, dirStream.byteOffset, dirStream.byteLength);
+  const numDirs = Math.floor(dirStream.length / 128);
+  const dirs = [];
+
+  for (let i = 0; i < numDirs; i++) {
+    const base = i * 128;
+    const nameByteLen = dirDv.getUint16(base + 64, true);
+    const objType = dirStream[base + 66];
+    if (objType === 0 || nameByteLen < 2) {
+      dirs.push(null);
+      continue;
+    }
+    const charCount = (nameByteLen >>> 1) - 1;
+    let name = '';
+    for (let c = 0; c < charCount; c++) {
+      name += String.fromCharCode(dirDv.getUint16(base + c * 2, true));
+    }
+    const leftId = dirDv.getUint32(base + 68, true);
+    const rightId = dirDv.getUint32(base + 72, true);
+    const childId = dirDv.getUint32(base + 76, true);
+    const startSec = dirDv.getUint32(base + 116, true);
+    const sizeLow = dirDv.getUint32(base + 120, true);
+    dirs.push({ id: i, name, objType, leftId, rightId, childId, startSec, size: sizeLow });
+  }
+
+  let miniFat = new Uint32Array(0);
+  if (numMiniFatSectors > 0 && firstMiniFatSector < 0xfffffffe) {
+    const mfBytes = readRegularStream(firstMiniFatSector, numMiniFatSectors * sectorSize);
+    miniFat = new Uint32Array(mfBytes.buffer, mfBytes.byteOffset, mfBytes.byteLength >>> 2);
+  }
+
+  const rootEntry = dirs[0];
+  const miniStreamBytes =
+    rootEntry && rootEntry.startSec < 0xfffffffe && rootEntry.size > 0
+      ? readRegularStream(rootEntry.startSec, rootEntry.size)
+      : new Uint8Array(0);
+
+  const readEntryBytes = (entry) => {
+    if (!entry || entry.size === 0) return new Uint8Array(0);
+    if (entry.size < miniStreamCutoff && miniStreamBytes.length > 0) {
+      const out = new Uint8Array(entry.size);
+      let pos = 0;
+      let mSec = entry.startSec;
+      const visited = new Set();
+      while (mSec < 0xfffffffe && pos < entry.size && !visited.has(mSec)) {
+        visited.add(mSec);
+        const off = mSec * miniSectorSize;
+        const take = Math.min(miniSectorSize, entry.size - pos, Math.max(0, miniStreamBytes.length - off));
+        if (take <= 0) break;
+        out.set(miniStreamBytes.subarray(off, off + take), pos);
+        pos += take;
+        mSec = miniFat[mSec] !== undefined ? miniFat[mSec] : 0xfffffffe;
+      }
+      return out;
+    }
+    return readRegularStream(entry.startSec, entry.size);
+  };
+
+  let isCompressed = true;
+  const fileHeaderEntry = dirs.find((d) => d && d.name === 'FileHeader');
+  if (fileHeaderEntry) {
+    const fh = readEntryBytes(fileHeaderEntry);
+    if (fh.length >= 40) {
+      const flags = new DataView(fh.buffer, fh.byteOffset, fh.byteLength).getUint32(36, true);
+      isCompressed = (flags & 1) !== 0;
+    }
+  }
+
+  const sectionEntries = dirs
+    .filter((d) => d && d.objType === 2 && /^Section\d+$/i.test(d.name))
+    .sort((a, b) => {
+      const na = parseInt(a.name.replace(/\D+/g, ''), 10) || 0;
+      const nb = parseInt(b.name.replace(/\D+/g, ''), 10) || 0;
+      return na - nb;
+    });
+
+  const allSectionTexts = [];
+  for (const secEntry of sectionEntries) {
+    let rawBytes = readEntryBytes(secEntry);
+    if (isCompressed && rawBytes.length > 0) {
+      try {
+        rawBytes = await inflateRawBytesPureJs(rawBytes);
+      } catch (e) {}
+    }
+    const text = parseHwpSectionRecordsPureJs(rawBytes);
+    if (text) allSectionTexts.push(text);
+  }
+  return allSectionTexts.join('\n\n');
+}
+
+async function extractDocumentTextPureJs(fileName, arrayBuffer) {
+  const u8 = new Uint8Array(arrayBuffer);
+  const ext = String(fileName || '').toLowerCase().split('.').pop();
+  if (ext === 'docx') return await extractDocxTextPureJs(u8);
+  if (ext === 'hwpx') return await extractHwpxTextPureJs(u8);
+  if (ext === 'hwp') return await extractHwpV5TextPureJs(u8);
+  return new TextDecoder('utf-8').decode(u8);
+}
+
+function normForNasMatch(str) {
+  return String(str || '')
+    .toLowerCase()
+    .replace(/\.(?:hwp|hwpx|docx|doc|md|pdf|txt)$/i, '')
+    .replace(/[\s_\-.,()\[\]~:'"“”‘’!]+/g, '');
+}
+
+function parseNasCourseFolder(folderName) {
+  const m = String(folderName).match(/^(?:(\d+)\.\s*)?([^_]+?)(?:\s*_\s*(.+))?$/);
+  const courseNum = m && m[1] ? parseInt(m[1], 10) : null;
+  const courseTitle = m && m[2] ? m[2].trim() : folderName;
+  const instructor = m && m[3] ? m[3].replace(/목사님|목사|[pP]$/g, '').trim() : '';
+  let bookInfo = null;
+  if (courseNum && courseNum >= 1 && courseNum <= 66) {
+    const found = BOOKS.find((b) => b[0] === courseNum);
+    if (found) bookInfo = { no: found[0], num: String(found[0]).padStart(2, '0'), full: found[1], short: found[2] };
+  }
+  if (!bookInfo && BOOK_LOOKUP.has(courseTitle)) {
+    bookInfo = BOOK_LOOKUP.get(courseTitle);
+  }
+  return { courseNum, courseTitle, instructor, bookInfo };
+}
+
+function formatKstDateDot(mtimeSec) {
+  const kstMs = (Number(mtimeSec) || Math.floor(Date.now() / 1000)) * 1000 + 9 * 3600 * 1000;
+  const iso = new Date(kstMs).toISOString().slice(0, 10);
+  return iso.replace(/-/g, '.');
+}
+
+function findFirstBibleRefInManuscript(rawBaseTitle, extractedText, courseMeta) {
+  const cleanText = String(extractedText || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\r\n/g, '\n');
+
+  const chVerseRegex = new RegExp(
+    `(?:^|[\\s(\\[“"‘'])` +
+      `(${BOOK_REGEX_STR})\\s*(\\d{1,3})\\s*(?:장\\s*|:\\s*)(\\d{1,3})(?:\\s*[-~,]\\s*(\\d{1,3}))?\\s*절?`,
+    'm'
+  );
+  const titleChOnlyRegex = new RegExp(`(${BOOK_REGEX_STR})\\s*(\\d{1,3})\\s*(?:장|편)?(?=\\s|_|-|\\)|$)`);
+
+  const titleCvMatch = rawBaseTitle.match(chVerseRegex);
+  if (titleCvMatch) {
+    const bInfo = BOOK_LOOKUP.get(titleCvMatch[1]);
+    if (bInfo) {
+      const ch = titleCvMatch[2];
+      const v1 = titleCvMatch[3];
+      const v2 = titleCvMatch[4];
+      return { ...bInfo, refStr: v2 ? `${ch}_${v1}-${v2}` : `${ch}_${v1}` };
+    }
+  }
+
+  const titleChMatch = rawBaseTitle.match(titleChOnlyRegex);
+  if (titleChMatch) {
+    const bInfo = BOOK_LOOKUP.get(titleChMatch[1]);
+    const targetCh = titleChMatch[2];
+    if (bInfo) {
+      const opening = cleanText.slice(0, 1200);
+      const specificRegex = new RegExp(
+        `(?:${bInfo.full}|${bInfo.short})\\s*${targetCh}\\s*(?:장\\s*|:)\\s*(\\d{1,3})(?:\\s*[-~,]\\s*(\\d{1,3}))?`
+      );
+      const specMatch = opening.match(specificRegex);
+      if (specMatch) {
+        const v1 = specMatch[1];
+        const v2 = specMatch[2];
+        return { ...bInfo, refStr: v2 ? `${targetCh}_${v1}-${v2}` : `${targetCh}_${v1}` };
+      }
+      return { ...bInfo, refStr: `${targetCh}` };
+    }
+  }
+
+  const bodyCvMatch = cleanText.match(chVerseRegex);
+  if (bodyCvMatch) {
+    const bInfo = BOOK_LOOKUP.get(bodyCvMatch[1]);
+    if (bInfo) {
+      const ch = bodyCvMatch[2];
+      const v1 = bodyCvMatch[3];
+      const v2 = bodyCvMatch[4];
+      return { ...bInfo, refStr: v2 ? `${ch}_${v1}-${v2}` : `${ch}_${v1}` };
+    }
+  }
+
+  if (courseMeta.bookInfo) {
+    const fallbackCh = cleanText.slice(0, 1500).match(titleChOnlyRegex);
+    if (fallbackCh) {
+      const bInfo = BOOK_LOOKUP.get(fallbackCh[1]) || courseMeta.bookInfo;
+      return { ...bInfo, refStr: `${fallbackCh[2]}` };
+    }
+    return { ...courseMeta.bookInfo, refStr: '0' };
+  }
+  return null;
+}
+
+function buildTargetNasMdFilename(nasFileName, courseMeta, extractedText, mtimeSec) {
+  const rawBase = nasFileName.replace(/\.(?:hwp|hwpx|docx|doc)$/i, '').trim();
+  const instrTag = courseMeta.instructor ? `${courseMeta.instructor}p` : '';
+  const dateTag = formatKstDateDot(mtimeSec);
+
+  const isHermeneutics =
+    courseMeta.courseTitle.includes('성경 해석의 원칙') || rawBase.includes('성경 해석의 원칙');
+
+  if (isHermeneutics) {
+    const parts = ['ths', instrTag, rawBase, dateTag].filter(Boolean);
+    return parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+  }
+
+  const firstRef = findFirstBibleRefInManuscript(rawBase, extractedText, courseMeta);
+  let displayTitle = rawBase;
+  if (courseMeta.bookInfo) {
+    const bookFull = courseMeta.bookInfo.full;
+    if (!rawBase.includes(bookFull)) {
+      displayTitle = `${bookFull} ${rawBase}`;
+    }
+  }
+
+  if (firstRef) {
+    const prefix = `${firstRef.num} ${firstRef.short} ${firstRef.refStr}`;
+    const parts = [prefix, 'ths', instrTag, displayTitle, dateTag].filter(Boolean);
+    return parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+  }
+
+  const parts = ['ths', instrTag, displayTitle, dateTag].filter(Boolean);
+  return parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+}
+
+function formatNasSeminaryMarkdown(rawText, nasFileName, courseMeta) {
+  const rawBase = nasFileName.replace(/\.(?:hwp|hwpx|docx|doc)$/i, '').trim();
+  let text = String(rawText || '').replace(/\r\n/g, '\n').replace(/\u00A0/g, ' ').trim();
+
+  const lines = text.split('\n').map((l) => l.trimEnd());
+  const formattedLines = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
+    if (!line) {
+      if (formattedLines.length > 0 && formattedLines[formattedLines.length - 1] !== '') {
+        formattedLines.push('');
+      }
+      continue;
+    }
+
+    if (
+      /^(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[IVX]+|\d{1,2})\.\s+[가-힣A-Za-z0-9]/.test(line) &&
+      line.length <= 72 &&
+      !/[.?!]$/.test(line)
+    ) {
+      formattedLines.push('');
+      formattedLines.push(`# ${line}`);
+      formattedLines.push('');
+      continue;
+    }
+
+    if (/^(?:\(\d{1,2}\)|\d{1,2}\)|[가-하]\.)\s+[가-힣A-Za-z0-9]/.test(line) && line.length <= 72) {
+      formattedLines.push('');
+      formattedLines.push(`## ${line}`);
+      formattedLines.push('');
+      continue;
+    }
+
+    line = line.replace(/^-\.\s+/, '- ').replace(/\s+-\.\s+/g, '\n- ');
+    formattedLines.push(line);
+  }
+
+  let body = formattedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (!body.startsWith('# ')) {
+    body = `# ${rawBase}\n\n${body}`;
+  }
+
+  const fmLines = ['---', 'vmark: false'];
+  if (courseMeta.instructor) fmLines.push(`강사: ${courseMeta.instructor}P`);
+  if (courseMeta.courseTitle) fmLines.push(`과목: ${courseMeta.courseTitle}`);
+  fmLines.push('---');
+
+  return `${fmLines.join('\n')}\n${body}\n`;
+}
 
 function parseSearchQuery(rawQuery, aiPlan = null) {
   const q = String(rawQuery || '').trim();
@@ -669,6 +1219,18 @@ class SermonVaultAIView extends ItemView {
     modelSelect.addEventListener('change', async () => {
       this.plugin.settings.geminiModel = modelSelect.value;
       await this.plugin.saveSettings();
+    });
+
+    const nasSyncBtn = headerActions.createEl('button', {
+      cls: 'svai-icon-btn',
+      attr: {
+        title: 'NAS 신학원 신규 원고 동기화 (9 신학원 원고-완료 → new 폴더)',
+        'aria-label': '신학원 원고 동기화'
+      }
+    });
+    setIcon(nasSyncBtn, 'folder-down');
+    nasSyncBtn.addEventListener('click', () => {
+      this.plugin.syncNasSeminaryToNewFolder(false);
     });
 
     const saveChatBtn = headerActions.createEl('button', {
@@ -1263,6 +1825,24 @@ class SermonVaultAIPlugin extends Plugin {
       id: 'open-sermon-vault-ai',
       name: '제미나이 설교·볼트 AI 사이드바 열기',
       callback: () => this.activateView()
+    });
+
+    this.addCommand({
+      id: 'sync-nas-seminary-to-new',
+      name: 'NAS 신학원 신규 원고 동기화 (9 신학원 원고-완료 → new 폴더)',
+      callback: () => this.syncNasSeminaryToNewFolder(false)
+    });
+
+    this.app.workspace.onLayoutReady(() => {
+      if (this.settings.nasAutoSyncWeekly) {
+        const WEEK_MS = 7 * 24 * 3600 * 1000;
+        const now = Date.now();
+        if (!this.settings.nasLastSyncTs || now - this.settings.nasLastSyncTs >= WEEK_MS) {
+          setTimeout(() => {
+            this.syncNasSeminaryToNewFolder(true);
+          }, 8000);
+        }
+      }
     });
 
     this.addCommand({
@@ -1984,6 +2564,278 @@ class SermonVaultAIPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(newFile);
     new Notice(`새 노트로 저장되었습니다: ${newFile.basename}`);
   }
+
+  async synoRequestJson(url) {
+    if (!(Platform && Platform.isMobile) && typeof require === 'function') {
+      try {
+        const https = require('https');
+        const http = require('http');
+        const parsed = new URL(url);
+        const mod = parsed.protocol === 'https:' ? https : http;
+        return await new Promise((resolve, reject) => {
+          const req = mod.get(
+            url,
+            { rejectUnauthorized: false, timeout: 25000 },
+            (res) => {
+              const chunks = [];
+              res.on('data', (c) => chunks.push(c));
+              res.on('end', () => {
+                try {
+                  const txt = Buffer.concat(chunks).toString('utf8');
+                  resolve(JSON.parse(txt));
+                } catch (e) {
+                  reject(e);
+                }
+              });
+            }
+          );
+          req.on('error', reject);
+          req.on('timeout', () => {
+            req.destroy(new Error('NAS 연결 시간 초과'));
+          });
+        });
+      } catch (e) {}
+    }
+    const resp = await requestUrl({ url, method: 'GET', throw: false });
+    if (resp.json) return resp.json;
+    return JSON.parse(resp.text);
+  }
+
+  async synoRequestBinary(url) {
+    if (!(Platform && Platform.isMobile) && typeof require === 'function') {
+      try {
+        const https = require('https');
+        const http = require('http');
+        const parsed = new URL(url);
+        const mod = parsed.protocol === 'https:' ? https : http;
+        return await new Promise((resolve, reject) => {
+          const req = mod.get(
+            url,
+            { rejectUnauthorized: false, timeout: 45000 },
+            (res) => {
+              const chunks = [];
+              res.on('data', (c) => chunks.push(c));
+              res.on('end', () => {
+                const buf = Buffer.concat(chunks);
+                resolve(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+              });
+            }
+          );
+          req.on('error', reject);
+          req.on('timeout', () => {
+            req.destroy(new Error('NAS 파일 다운로드 시간 초과'));
+          });
+        });
+      } catch (e) {}
+    }
+    const resp = await requestUrl({ url, method: 'GET', throw: false });
+    return resp.arrayBuffer;
+  }
+
+  async sendTelegramAlertIfConfigured(createdFiles) {
+    const token = String(this.settings.telegramBotToken || '').trim();
+    const chatId = String(this.settings.telegramChatId || '').trim();
+    if (!token || !chatId || !createdFiles || createdFiles.length === 0) return;
+
+    const lines = [
+      `📚 *[신학원 원고 자동 업데이트]*`,
+      `NAS \`9 신학원 원고-완료\`에서 신규 원고 *${createdFiles.length}건*이 옵시디언 \`${this.settings.nasNewFolder || 'new'}\` 폴더에 저장되었습니다.`,
+      ``
+    ];
+    for (let i = 0; i < createdFiles.length; i++) {
+      lines.push(`${i + 1}. \`${createdFiles[i]}\``);
+    }
+    try {
+      await requestUrl({
+        url: `https://api.telegram.org/bot${token}/sendMessage`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: lines.join('\n'),
+          parse_mode: 'Markdown'
+        }),
+        throw: false
+      });
+    } catch (e) {}
+  }
+
+  async syncNasSeminaryToNewFolder(isAutoBackground = false) {
+    if (this._isSyncingNas) {
+      if (!isAutoBackground) new Notice('이미 NAS 신학원 원고 동기화가 진행 중입니다.');
+      return;
+    }
+    const baseUrl = String(this.settings.nasBaseUrl || 'https://seoulpastor.direct.quickconnect.to:5001')
+      .trim()
+      .replace(/\/$/, '');
+    const user = String(this.settings.nasUser || '').trim();
+    const pass = String(this.settings.nasPass || '').trim();
+    const rootFolder = String(this.settings.nasRootFolder || '/개인폴더/히 최신자료/9 신학원 원고-완료').trim();
+    const newFolderName = String(this.settings.nasNewFolder || 'new').trim().replace(/^\/+|\/+$/g, '') || 'new';
+
+    if (!baseUrl || !user || !pass) {
+      if (!isAutoBackground) {
+        new Notice('NAS 주소, 아이디, 비밀번호를 플러그인 설정에서 먼저 확인해 주세요.');
+      }
+      return;
+    }
+
+    this._isSyncingNas = true;
+    if (!isAutoBackground) {
+      new Notice('📥 NAS [9 신학원 원고-완료]에서 신규 원고를 확인하고 있습니다...');
+    }
+
+    try {
+      // 1. Login to Synology DSM FileStation API
+      const loginUrl =
+        `${baseUrl}/webapi/auth.cgi?api=SYNO.API.Auth&version=3&method=login` +
+        `&account=${encodeURIComponent(user)}&passwd=${encodeURIComponent(pass)}` +
+        `&session=FileStation&format=sid`;
+      const loginJson = await this.synoRequestJson(loginUrl);
+      if (!loginJson || !loginJson.success || !loginJson.data?.sid) {
+        throw new Error('NAS 로그인 실패 (아이디/비밀번호 또는 주소를 확인하세요)');
+      }
+      const sid = loginJson.data.sid;
+
+      // 2. Index existing markdown files in the vault (excluding new/ and system folders)
+      const allMdFiles = this.app.vault.getMarkdownFiles();
+      const vaultFileNorms = [];
+      for (const f of allMdFiles) {
+        if (
+          f.path.startsWith('.') ||
+          f.path.startsWith('_') ||
+          f.path.startsWith(`${newFolderName}/`)
+        ) {
+          continue;
+        }
+        vaultFileNorms.push({
+          name: f.name,
+          norm: normForNasMatch(f.basename),
+          path: f.path
+        });
+      }
+
+      const isAlreadyInObsidianVault = (nasFileName) => {
+        const rawBase = nasFileName.replace(/\.(?:hwp|hwpx|docx|doc)$/i, '').trim();
+        const fullNorm = normForNasMatch(rawBase);
+        const strippedTitle = rawBase.replace(/^\d+\s*[._\-)\s]\s*/, '').trim();
+        const strippedNorm = normForNasMatch(strippedTitle);
+        for (const vf of vaultFileNorms) {
+          if (fullNorm.length >= 4 && vf.norm.includes(fullNorm)) return vf.path;
+          if (strippedNorm.length >= 6 && vf.norm.includes(strippedNorm)) return vf.path;
+        }
+        return null;
+      };
+
+      // 3. List course folders in NAS rootFolder
+      const listUrl = (folderPath) =>
+        `${baseUrl}/webapi/entry.cgi?api=SYNO.FileStation.List&version=2&method=list` +
+        `&folder_path=${encodeURIComponent(folderPath)}` +
+        `&additional=${encodeURIComponent('["size","time"]')}` +
+        `&_sid=${encodeURIComponent(sid)}`;
+
+      const rootJson = await this.synoRequestJson(listUrl(rootFolder));
+      if (!rootJson || !rootJson.success) {
+        throw new Error(`NAS 폴더 조회 실패: ${rootFolder}`);
+      }
+      const courseDirs = (rootJson.data?.files || []).filter((f) => f.isdir);
+
+      if (!this.settings.nasSyncedPaths) this.settings.nasSyncedPaths = {};
+      if (!(await this.app.vault.adapter.exists(newFolderName))) {
+        try {
+          await this.app.vault.createFolder(newFolderName);
+        } catch (e) {}
+      }
+
+      const newlyCreated = [];
+      let checkedCount = 0;
+
+      for (const dir of courseDirs) {
+        const courseMeta = parseNasCourseFolder(dir.name);
+        let subFiles = [];
+        try {
+          const subJson = await this.synoRequestJson(listUrl(dir.path));
+          subFiles = subJson?.data?.files || [];
+        } catch (e) {
+          continue;
+        }
+
+        for (const f of subFiles) {
+          if (f.isdir) continue;
+          const ext = f.name.toLowerCase().split('.').pop();
+          if (!['hwp', 'hwpx', 'docx'].includes(ext)) continue;
+          checkedCount++;
+
+          const mtime = f.additional?.time?.mtime || f.additional?.time?.crtime || 0;
+          const prevSync = this.settings.nasSyncedPaths[f.path];
+          if (
+            prevSync &&
+            prevSync.mtime === mtime &&
+            prevSync.targetMd &&
+            (await this.app.vault.adapter.exists(`${newFolderName}/${prevSync.targetMd}`))
+          ) {
+            continue;
+          }
+
+          const existingVaultPath = isAlreadyInObsidianVault(f.name);
+          if (existingVaultPath) {
+            this.settings.nasSyncedPaths[f.path] = {
+              mtime,
+              status: 'already_in_vault',
+              vaultPath: existingVaultPath
+            };
+            continue;
+          }
+
+          // Missing in vault -> Download and convert pure-JS to Markdown in new/ folder
+          const dlUrl =
+            `${baseUrl}/webapi/entry.cgi?api=SYNO.FileStation.Download&version=2&method=download` +
+            `&path=${encodeURIComponent(f.path)}&mode=download&_sid=${encodeURIComponent(sid)}`;
+          const binBuf = await this.synoRequestBinary(dlUrl);
+          const extractedText = await extractDocumentTextPureJs(f.name, binBuf);
+          if (!extractedText || extractedText.trim().length < 20) {
+            continue;
+          }
+
+          const targetMdName = buildTargetNasMdFilename(f.name, courseMeta, extractedText, mtime);
+          const mdContent = formatNasSeminaryMarkdown(extractedText, f.name, courseMeta);
+          const targetRelPath = `${newFolderName}/${targetMdName}`;
+
+          await this.app.vault.adapter.write(targetRelPath, mdContent);
+          this.settings.nasSyncedPaths[f.path] = {
+            mtime,
+            status: 'synced_to_new',
+            targetMd: targetMdName,
+            syncedAt: new Date().toISOString()
+          };
+          newlyCreated.push(targetMdName);
+        }
+      }
+
+      this.settings.nasLastSyncTs = Date.now();
+      await this.saveSettings();
+
+      if (newlyCreated.length > 0) {
+        await this.sendTelegramAlertIfConfigured(newlyCreated);
+        new Notice(
+          `✅ NAS 신학원 신규 원고 ${newlyCreated.length}건이 '${newFolderName}/' 폴더에 생성되었습니다!\n` +
+            newlyCreated.slice(0, 3).join('\n'),
+          10000
+        );
+      } else if (!isAutoBackground) {
+        new Notice(
+          `✅ NAS 신학원 원고(${checkedCount}개) 점검 완료: 현재 볼트에 없는 신규 원고는 모두 '${newFolderName}/' 폴더에 최신 상태로 반영되어 있습니다.`,
+          6000
+        );
+      }
+    } catch (err) {
+      if (!isAutoBackground) {
+        new Notice(`❌ NAS 신학원 동기화 오류: ${err && err.message ? err.message : err}`, 8000);
+      }
+    } finally {
+      this._isSyncingNas = false;
+    }
+  }
 }
 
 class SermonVaultAISettingTab extends PluginSettingTab {
@@ -2124,6 +2976,106 @@ class SermonVaultAISettingTab extends PluginSettingTab {
         text.inputEl.rows = 5;
         text.inputEl.style.width = '100%';
       });
+
+    containerEl.createEl('h3', { text: '📥 Synology NAS 신학원 원고 자동 동기화 (new 폴더)' });
+
+    new Setting(containerEl)
+      .setName('NAS 서버 주소 (DSM URL)')
+      .setDesc('Synology NAS WebAPI 주소 (기본값: https://seoulpastor.direct.quickconnect.to:5001)')
+      .addText((text) =>
+        text
+          .setPlaceholder('https://seoulpastor.direct.quickconnect.to:5001')
+          .setValue(this.plugin.settings.nasBaseUrl || '')
+          .onChange(async (val) => {
+            this.plugin.settings.nasBaseUrl = val.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('NAS 계정 아이디 / 비밀번호')
+      .setDesc('신학원 원고 폴더 접근 권한이 있는 NAS 계정 정보')
+      .addText((text) =>
+        text
+          .setPlaceholder('아이디 (예: pastor)')
+          .setValue(this.plugin.settings.nasUser || '')
+          .onChange(async (val) => {
+            this.plugin.settings.nasUser = val.trim();
+            await this.plugin.saveSettings();
+          })
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder('비밀번호')
+          .setValue(this.plugin.settings.nasPass || '')
+          .onChange(async (val) => {
+            this.plugin.settings.nasPass = val.trim();
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.type = 'password';
+      });
+
+    new Setting(containerEl)
+      .setName('NAS 신학원 원고 경로 및 볼트 저장 폴더')
+      .setDesc('NAS 원고 폴더 경로와 신규 변환된 MD 파일이 저장될 옵시디언 폴더명 (기본값: new)')
+      .addText((text) =>
+        text
+          .setPlaceholder('/개인폴더/히 최신자료/9 신학원 원고-완료')
+          .setValue(this.plugin.settings.nasRootFolder || '')
+          .onChange(async (val) => {
+            this.plugin.settings.nasRootFolder = val.trim();
+            await this.plugin.saveSettings();
+          })
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder('new')
+          .setValue(this.plugin.settings.nasNewFolder || 'new')
+          .onChange(async (val) => {
+            this.plugin.settings.nasNewFolder = val.trim() || 'new';
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('주 1회 자동 동기화 및 즉시 동기화 실행')
+      .setDesc('켜두면 옵시디언 실행 시 마지막 동기화로부터 7일이 지났을 때 백그라운드에서 자동으로 신규 원고를 확인합니다.')
+      .addToggle((toggle) =>
+        toggle.setValue(Boolean(this.plugin.settings.nasAutoSyncWeekly)).onChange(async (val) => {
+          this.plugin.settings.nasAutoSyncWeekly = val;
+          await this.plugin.saveSettings();
+        })
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText('📥 지금 신학원 신규 원고 동기화')
+          .setCta()
+          .onClick(async () => {
+            await this.plugin.syncNasSeminaryToNewFolder(false);
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('텔레그램 알림 연동 (선택 사항)')
+      .setDesc('신규 원고가 new 폴더에 추가될 때 텔레그램 알림을 받을 봇 토큰(Bot Token)과 채팅 ID(Chat ID)')
+      .addText((text) =>
+        text
+          .setPlaceholder('Bot Token (예: 123456:ABC-DEF...)')
+          .setValue(this.plugin.settings.telegramBotToken || '')
+          .onChange(async (val) => {
+            this.plugin.settings.telegramBotToken = val.trim();
+            await this.plugin.saveSettings();
+          })
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder('Chat ID (예: 123456789)')
+          .setValue(this.plugin.settings.telegramChatId || '')
+          .onChange(async (val) => {
+            this.plugin.settings.telegramChatId = val.trim();
+            await this.plugin.saveSettings();
+          })
+      );
   }
 }
 
