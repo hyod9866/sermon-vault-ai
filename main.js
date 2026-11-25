@@ -828,6 +828,10 @@ function buildTargetNasMdPlacement(nasFileName, courseMeta, extractedText, mtime
     const fileName = parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
     return { folder: '02 성경 연구/01 주제/그리스도인의 4단계 훈련 - 서도석P', fileName };
   }
+  if (ct.includes('성경지명') || rawBase.includes('성경지명과 사건')) {
+    const fileName = rawBase.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+    return { folder: '02 성경 연구/03 지역', fileName };
+  }
 
   // 2. Find the first Bible reference in the manuscript
   const firstRef = findFirstBibleRefInManuscript(rawBase, extractedText, courseMeta);
