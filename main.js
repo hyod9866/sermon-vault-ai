@@ -801,19 +801,35 @@ function findFirstBibleRefInManuscript(rawBaseTitle, extractedText, courseMeta) 
   return null;
 }
 
-function buildTargetNasMdFilename(nasFileName, courseMeta, extractedText, mtimeSec) {
+function buildTargetNasMdPlacement(nasFileName, courseMeta, extractedText, mtimeSec) {
   const rawBase = nasFileName.replace(/\.(?:hwp|hwpx|docx|doc)$/i, '').trim();
   const instrTag = courseMeta.instructor ? `${courseMeta.instructor}p` : '';
   const dateTag = formatKstDateDot(mtimeSec);
+  const ct = String(courseMeta.courseTitle || '');
 
-  const isHermeneutics =
-    courseMeta.courseTitle.includes('성경 해석의 원칙') || rawBase.includes('성경 해석의 원칙');
-
-  if (isHermeneutics) {
+  // 1. Check special thematic folders under "02 성경 연구"
+  if (ct.includes('성경 해석의 원칙') || rawBase.includes('성경 해석의 원칙')) {
     const parts = ['ths', instrTag, rawBase, dateTag].filter(Boolean);
-    return parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+    const fileName = parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+    return { folder: '02 성경 연구/01 주제/성경 해석의 원칙 - 신용철P', fileName };
+  }
+  if (ct.includes('교사 교육') || rawBase.includes('교사 교육')) {
+    const parts = ['ths', instrTag, rawBase, dateTag].filter(Boolean);
+    const fileName = parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+    return { folder: '02 성경 연구/01 주제/교사 교육 - 오세일p', fileName };
+  }
+  if (ct.includes('바른 구원관') || rawBase.includes('바른 구원관')) {
+    const parts = ['ths', instrTag, rawBase, dateTag].filter(Boolean);
+    const fileName = parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+    return { folder: '02 성경 연구/01 주제/바른 구원관(서도석P)', fileName };
+  }
+  if (ct.includes('그리스도인의 4단계 훈련')) {
+    const parts = ['ths', instrTag, rawBase, dateTag].filter(Boolean);
+    const fileName = parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+    return { folder: '02 성경 연구/01 주제/그리스도인의 4단계 훈련 - 서도석P', fileName };
   }
 
+  // 2. Find the first Bible reference in the manuscript
   const firstRef = findFirstBibleRefInManuscript(rawBase, extractedText, courseMeta);
   let displayTitle = rawBase;
   if (courseMeta.bookInfo) {
@@ -823,14 +839,39 @@ function buildTargetNasMdFilename(nasFileName, courseMeta, extractedText, mtimeS
     }
   }
 
+  let fileName = '';
   if (firstRef) {
     const prefix = `${firstRef.num} ${firstRef.short} ${firstRef.refStr}`;
     const parts = [prefix, 'ths', instrTag, displayTitle, dateTag].filter(Boolean);
-    return parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+    fileName = parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+  } else {
+    const parts = ['ths', instrTag, displayTitle, dateTag].filter(Boolean);
+    fileName = parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
   }
 
-  const parts = ['ths', instrTag, displayTitle, dateTag].filter(Boolean);
-  return parts.join(' ').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() + '.md';
+  // 3. Determine target folder in 03 구약, 04 신약, or 02 성경 연구
+  if (ct.includes('성경의 탐구')) {
+    return { folder: '02 성경 연구/01 주제/성경의 탐구 - 서도석P', fileName };
+  }
+  if (ct.includes('주제별 성경연구')) {
+    return { folder: '02 성경 연구/01 주제/주제별 성경연구_변인교', fileName };
+  }
+  if (ct.includes('성경인물') || ct.includes('인물연구')) {
+    return { folder: '02 성경 연구/02 인물', fileName };
+  }
+
+  const targetBook = firstRef || courseMeta.bookInfo;
+  if (targetBook && targetBook.no >= 1 && targetBook.no <= 39) {
+    return { folder: `03 구약/${targetBook.num} ${targetBook.full}`, fileName };
+  }
+  if (targetBook && targetBook.no >= 40 && targetBook.no <= 66) {
+    return { folder: `04 신약/${targetBook.num} ${targetBook.full}`, fileName };
+  }
+
+  if (ct.includes('조직신학')) {
+    return { folder: '02 성경 연구/01 주제/성경을 중심으로 한 조직신학_홍정현P', fileName };
+  }
+  return { folder: '02 성경 연구/01 주제', fileName };
 }
 
 function formatNasSeminaryMarkdown(rawText, nasFileName, courseMeta) {
@@ -1224,7 +1265,7 @@ class SermonVaultAIView extends ItemView {
     const nasSyncBtn = headerActions.createEl('button', {
       cls: 'svai-icon-btn',
       attr: {
-        title: 'NAS 신학원 신규 원고 동기화 (9 신학원 원고-완료 → new 폴더)',
+        title: 'NAS 신학원 신규 원고 동기화 (9 신학원 원고-완료 → 03 구약 / 04 신약 / 02 성경 연구 자동 배치)',
         'aria-label': '신학원 원고 동기화'
       }
     });
@@ -1829,7 +1870,7 @@ class SermonVaultAIPlugin extends Plugin {
 
     this.addCommand({
       id: 'sync-nas-seminary-to-new',
-      name: 'NAS 신학원 신규 원고 동기화 (9 신학원 원고-완료 → new 폴더)',
+      name: 'NAS 신학원 신규 원고 동기화 (9 신학원 원고-완료 → 03 구약 / 04 신약 / 02 성경 연구 자동 배치)',
       callback: () => this.syncNasSeminaryToNewFolder(false)
     });
 
@@ -2632,18 +2673,36 @@ class SermonVaultAIPlugin extends Plugin {
     return resp.arrayBuffer;
   }
 
-  async sendTelegramAlertIfConfigured(createdFiles) {
+  async ensureVaultFolderPath(folderPath) {
+    const clean = String(folderPath || '')
+      .replace(/\\/g, '/')
+      .replace(/^\/+|\/+$/g, '');
+    if (!clean) return;
+    const parts = clean.split('/');
+    let cur = '';
+    for (const part of parts) {
+      cur = cur ? `${cur}/${part}` : part;
+      if (!(await this.app.vault.adapter.exists(cur))) {
+        try {
+          await this.app.vault.createFolder(cur);
+        } catch (e) {}
+      }
+    }
+  }
+
+  async sendTelegramAlertIfConfigured(createdItems) {
     const token = String(this.settings.telegramBotToken || '').trim();
     const chatId = String(this.settings.telegramChatId || '').trim();
-    if (!token || !chatId || !createdFiles || createdFiles.length === 0) return;
+    if (!token || !chatId || !createdItems || createdItems.length === 0) return;
 
     const lines = [
-      `📚 *[신학원 원고 자동 업데이트]*`,
-      `NAS \`9 신학원 원고-완료\`에서 신규 원고 *${createdFiles.length}건*이 옵시디언 \`${this.settings.nasNewFolder || 'new'}\` 폴더에 저장되었습니다.`,
+      `📚 *[신학원 원고 자동 업데이트 완료]*`,
+      `NAS \`9 신학원 원고-완료\`에서 신규 원고 *${createdItems.length}건*이 옵시디언 각 폴더에 자동 배치되었습니다:`,
       ``
     ];
-    for (let i = 0; i < createdFiles.length; i++) {
-      lines.push(`${i + 1}. \`${createdFiles[i]}\``);
+    for (let i = 0; i < createdItems.length; i++) {
+      const item = createdItems[i];
+      lines.push(`${i + 1}. 📂 *${item.folder}*\n   └ 📄 \`${item.fileName}\``);
     }
     try {
       await requestUrl({
@@ -2671,7 +2730,6 @@ class SermonVaultAIPlugin extends Plugin {
     const user = String(this.settings.nasUser || '').trim();
     const pass = String(this.settings.nasPass || '').trim();
     const rootFolder = String(this.settings.nasRootFolder || '/개인폴더/히 최신자료/9 신학원 원고-완료').trim();
-    const newFolderName = String(this.settings.nasNewFolder || 'new').trim().replace(/^\/+|\/+$/g, '') || 'new';
 
     if (!baseUrl || !user || !pass) {
       if (!isAutoBackground) {
@@ -2697,15 +2755,11 @@ class SermonVaultAIPlugin extends Plugin {
       }
       const sid = loginJson.data.sid;
 
-      // 2. Index existing markdown files in the vault (excluding new/ and system folders)
+      // 2. Index existing markdown files in the vault (excluding system folders)
       const allMdFiles = this.app.vault.getMarkdownFiles();
       const vaultFileNorms = [];
       for (const f of allMdFiles) {
-        if (
-          f.path.startsWith('.') ||
-          f.path.startsWith('_') ||
-          f.path.startsWith(`${newFolderName}/`)
-        ) {
+        if (f.path.startsWith('.') || f.path.startsWith('_')) {
           continue;
         }
         vaultFileNorms.push({
@@ -2741,11 +2795,6 @@ class SermonVaultAIPlugin extends Plugin {
       const courseDirs = (rootJson.data?.files || []).filter((f) => f.isdir);
 
       if (!this.settings.nasSyncedPaths) this.settings.nasSyncedPaths = {};
-      if (!(await this.app.vault.adapter.exists(newFolderName))) {
-        try {
-          await this.app.vault.createFolder(newFolderName);
-        } catch (e) {}
-      }
 
       const newlyCreated = [];
       let checkedCount = 0;
@@ -2771,8 +2820,8 @@ class SermonVaultAIPlugin extends Plugin {
           if (
             prevSync &&
             prevSync.mtime === mtime &&
-            prevSync.targetMd &&
-            (await this.app.vault.adapter.exists(`${newFolderName}/${prevSync.targetMd}`))
+            prevSync.targetRelPath &&
+            (await this.app.vault.adapter.exists(prevSync.targetRelPath))
           ) {
             continue;
           }
@@ -2787,7 +2836,7 @@ class SermonVaultAIPlugin extends Plugin {
             continue;
           }
 
-          // Missing in vault -> Download and convert pure-JS to Markdown in new/ folder
+          // Missing in vault -> Download and convert pure-JS to Markdown directly into target folder
           const dlUrl =
             `${baseUrl}/webapi/entry.cgi?api=SYNO.FileStation.Download&version=2&method=download` +
             `&path=${encodeURIComponent(f.path)}&mode=download&_sid=${encodeURIComponent(sid)}`;
@@ -2797,18 +2846,25 @@ class SermonVaultAIPlugin extends Plugin {
             continue;
           }
 
-          const targetMdName = buildTargetNasMdFilename(f.name, courseMeta, extractedText, mtime);
+          const placement = buildTargetNasMdPlacement(f.name, courseMeta, extractedText, mtime);
           const mdContent = formatNasSeminaryMarkdown(extractedText, f.name, courseMeta);
-          const targetRelPath = `${newFolderName}/${targetMdName}`;
+          await this.ensureVaultFolderPath(placement.folder);
+          const targetRelPath = `${placement.folder}/${placement.fileName}`;
 
           await this.app.vault.adapter.write(targetRelPath, mdContent);
           this.settings.nasSyncedPaths[f.path] = {
             mtime,
-            status: 'synced_to_new',
-            targetMd: targetMdName,
+            status: 'synced_to_vault',
+            targetFolder: placement.folder,
+            targetMd: placement.fileName,
+            targetRelPath,
             syncedAt: new Date().toISOString()
           };
-          newlyCreated.push(targetMdName);
+          newlyCreated.push({
+            folder: placement.folder,
+            fileName: placement.fileName,
+            relPath: targetRelPath
+          });
         }
       }
 
@@ -2817,14 +2873,17 @@ class SermonVaultAIPlugin extends Plugin {
 
       if (newlyCreated.length > 0) {
         await this.sendTelegramAlertIfConfigured(newlyCreated);
+        const previewLines = newlyCreated
+          .slice(0, 4)
+          .map((it) => `📂 ${it.folder}\n  └ ${it.fileName}`);
         new Notice(
-          `✅ NAS 신학원 신규 원고 ${newlyCreated.length}건이 '${newFolderName}/' 폴더에 생성되었습니다!\n` +
-            newlyCreated.slice(0, 3).join('\n'),
+          `✅ NAS 신학원 신규 원고 ${newlyCreated.length}건이 각 폴더에 저장되었습니다!\n` +
+            previewLines.join('\n'),
           10000
         );
       } else if (!isAutoBackground) {
         new Notice(
-          `✅ NAS 신학원 원고(${checkedCount}개) 점검 완료: 현재 볼트에 없는 신규 원고는 모두 '${newFolderName}/' 폴더에 최신 상태로 반영되어 있습니다.`,
+          `✅ NAS 신학원 원고(${checkedCount}개) 점검 완료: 모든 원고가 이미 옵시디언(03 구약 / 04 신약 / 02 성경 연구)에 최신 상태로 반영되어 있습니다.`,
           6000
         );
       }
@@ -2977,7 +3036,7 @@ class SermonVaultAISettingTab extends PluginSettingTab {
         text.inputEl.style.width = '100%';
       });
 
-    containerEl.createEl('h3', { text: '📥 Synology NAS 신학원 원고 자동 동기화 (new 폴더)' });
+    containerEl.createEl('h3', { text: '📥 Synology NAS 신학원 원고 자동 동기화 (03 구약 / 04 신약 / 02 성경 연구 자동 배치)' });
 
     new Setting(containerEl)
       .setName('NAS 서버 주소 (DSM URL)')
@@ -3016,23 +3075,14 @@ class SermonVaultAISettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('NAS 신학원 원고 경로 및 볼트 저장 폴더')
-      .setDesc('NAS 원고 폴더 경로와 신규 변환된 MD 파일이 저장될 옵시디언 폴더명 (기본값: new)')
+      .setName('NAS 신학원 원고 폴더 경로')
+      .setDesc('신규 원고는 성경 장·절과 과목명을 분석하여 [03 구약/각 권], [04 신약/각 권], [02 성경 연구/각 과목] 폴더로 자동 분류됩니다.')
       .addText((text) =>
         text
           .setPlaceholder('/개인폴더/히 최신자료/9 신학원 원고-완료')
           .setValue(this.plugin.settings.nasRootFolder || '')
           .onChange(async (val) => {
             this.plugin.settings.nasRootFolder = val.trim();
-            await this.plugin.saveSettings();
-          })
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder('new')
-          .setValue(this.plugin.settings.nasNewFolder || 'new')
-          .onChange(async (val) => {
-            this.plugin.settings.nasNewFolder = val.trim() || 'new';
             await this.plugin.saveSettings();
           })
       );
@@ -3055,25 +3105,114 @@ class SermonVaultAISettingTab extends PluginSettingTab {
           })
       );
 
+    containerEl.createEl('h3', { text: '📲 개인 텔레그램 알림 설정 (각자 자신의 옵시디언에 직접 등록)' });
+
+    let chatIdInputEl = null;
+
     new Setting(containerEl)
-      .setName('텔레그램 알림 연동 (선택 사항)')
-      .setDesc('신규 원고가 new 폴더에 추가될 때 텔레그램 알림을 받을 봇 토큰(Bot Token)과 채팅 ID(Chat ID)')
-      .addText((text) =>
+      .setName('1단계: 내 텔레그램 봇 토큰 (HTTP API Token)')
+      .setDesc('텔레그램 @BotFather 에서 발급받은 본인의 Bot Token을 입력하고, 만든 봇 대화방에서 아무 말(예: "시작")이나 한 번 보낸 뒤 우측 [Chat ID 자동 찾기]를 누르세요.')
+      .addText((text) => {
         text
-          .setPlaceholder('Bot Token (예: 123456:ABC-DEF...)')
+          .setPlaceholder('예: 123456789:ABCdefGHIjklMNO...')
           .setValue(this.plugin.settings.telegramBotToken || '')
           .onChange(async (val) => {
             this.plugin.settings.telegramBotToken = val.trim();
             await this.plugin.saveSettings();
-          })
-      )
-      .addText((text) =>
+          });
+        text.inputEl.style.width = '240px';
+      })
+      .addButton((btn) =>
+        btn.setButtonText('🔍 Chat ID 자동 찾기').onClick(async () => {
+          const token = String(this.plugin.settings.telegramBotToken || '').trim();
+          if (!token) {
+            new Notice('먼저 텔레그램 봇 토큰(HTTP API Token)을 입력해 주세요.');
+            return;
+          }
+          btn.setButtonText('조회 중...');
+          try {
+            const resp = await requestUrl({
+              url: `https://api.telegram.org/bot${token}/getUpdates`,
+              method: 'GET',
+              throw: false
+            });
+            const data = resp.json || JSON.parse(resp.text || '{}');
+            if (!data.ok) {
+              throw new Error(data.description || '유효하지 않은 봇 토큰입니다.');
+            }
+            const results = data.result || [];
+            let foundChatId = '';
+            let foundName = '';
+            for (let i = results.length - 1; i >= 0; i--) {
+              const chat =
+                results[i]?.message?.chat ||
+                results[i]?.edited_message?.chat ||
+                results[i]?.my_chat_member?.chat;
+              if (chat && chat.id) {
+                foundChatId = String(chat.id);
+                foundName = [chat.first_name, chat.last_name, chat.username ? `(@${chat.username})` : '']
+                  .filter(Boolean)
+                  .join(' ');
+                break;
+              }
+            }
+            if (!foundChatId) {
+              new Notice(
+                '⚠️ 아직 봇과 나눈 대화가 없습니다. 텔레그램에서 방금 만든 봇에게 "안녕"이라고 메시지를 한 번 보낸 뒤 다시 눌러 주세요!',
+                8000
+              );
+              return;
+            }
+            this.plugin.settings.telegramChatId = foundChatId;
+            await this.plugin.saveSettings();
+            if (chatIdInputEl) chatIdInputEl.value = foundChatId;
+            new Notice(`✅ Chat ID 자동 등록 완료: ${foundChatId} ${foundName ? `(${foundName})` : ''}`);
+          } catch (err) {
+            new Notice(`❌ Chat ID 조회 실패: ${err.message || err}`);
+          } finally {
+            btn.setButtonText('🔍 Chat ID 자동 찾기');
+          }
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('2단계: 내 텔레그램 Chat ID 및 알림 테스트')
+      .setDesc('자동으로 채워진 Chat ID(또는 직접 입력한 ID)로 어느 폴더에 어떤 파일이 담겼는지 테스트 알림을 보냅니다.')
+      .addText((text) => {
+        chatIdInputEl = text.inputEl;
         text
           .setPlaceholder('Chat ID (예: 123456789)')
           .setValue(this.plugin.settings.telegramChatId || '')
           .onChange(async (val) => {
             this.plugin.settings.telegramChatId = val.trim();
             await this.plugin.saveSettings();
+          });
+      })
+      .addButton((btn) =>
+        btn
+          .setButtonText('📨 테스트 알림 보내기')
+          .setCta()
+          .onClick(async () => {
+            const token = String(this.plugin.settings.telegramBotToken || '').trim();
+            const chatId = String(this.plugin.settings.telegramChatId || '').trim();
+            if (!token || !chatId) {
+              new Notice('봇 토큰과 Chat ID를 먼저 설정해 주세요.');
+              return;
+            }
+            btn.setButtonText('전송 중...');
+            try {
+              await this.plugin.sendTelegramAlertIfConfigured([
+                {
+                  folder: '03 구약/01 창세기',
+                  fileName: '01 창 1_1 ths 박경수p 창세기 06. 위치와 질서의 하나님 2026.11.04.md'
+                }
+              ]);
+              new Notice('✅ 텔레그램으로 테스트 알림을 발송했습니다! 텔레그램 앱을 확인해 보세요.');
+            } catch (err) {
+              new Notice(`❌ 테스트 발송 실패: ${err.message || err}`);
+            } finally {
+              btn.setButtonText('📨 테스트 알림 보내기');
+            }
           })
       );
   }
