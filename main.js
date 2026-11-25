@@ -339,7 +339,7 @@ const DEFAULT_SETTINGS = {
   nasAutoSyncWeekly: true,
   nasLastSyncTs: 0,
   nasSyncedPaths: {},
-  telegramBotToken: '',
+  telegramBotToken: '9071996966:AAGtkb9f3Ss4oUagnZ4-9gtB2we7g4lDMPU',
   telegramChatId: '',
   chatHistory: []
 };
@@ -1991,6 +1991,9 @@ class SermonVaultAIPlugin extends Plugin {
   async loadSettings() {
     const loaded = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+    if (!this.settings.telegramBotToken || !String(this.settings.telegramBotToken).trim()) {
+      this.settings.telegramBotToken = DEFAULT_SETTINGS.telegramBotToken;
+    }
     this.settings.quotaStats = Object.assign({}, DEFAULT_SETTINGS.quotaStats, loaded?.quotaStats || {});
     this.settings.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
     if (Array.isArray(this.settings.chatHistory)) {
